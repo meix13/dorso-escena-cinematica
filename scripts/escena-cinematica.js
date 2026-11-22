@@ -50,6 +50,14 @@ function getDefaultFitMode() {
     }
 }
 
+function getDefaultTransitionStyle() {
+    try {
+        return game.settings.get(MODULE_ID, "defaultTransitionStyle") || "fade";
+    } catch (e) {
+        return "fade";
+    }
+}
+
 function getCinematicStateSetting() {
     try {
         return game.settings.get(MODULE_ID, "cinematicState") || { active: false };
@@ -78,7 +86,45 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fadeInBlack(durationMs) {
+async function fadeInBlack(durationMs, transitionStyle = "fade") {
+    if (transitionStyle === "oniric") {
+        let oniricEl = document.getElementById("dec-oniric-overlay");
+        if (oniricEl) oniricEl.remove();
+
+        const coverMs = Math.max(900, durationMs);
+        oniricEl = document.createElement("div");
+        oniricEl.id = "dec-oniric-overlay";
+        oniricEl.className = "dec-oniric-overlay";
+        oniricEl.style.setProperty("--dec-oniric-cover-ms", `${coverMs}ms`);
+        oniricEl.innerHTML = `
+            <svg class="dec-oniric-svg-defs" width="0" height="0" aria-hidden="true">
+                <defs>
+                    <filter id="dec-oniric-turbulence" x="-25%" y="-25%" width="150%" height="150%">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="4" seed="${Math.floor(Math.random() * 900) + 100}" result="noise">
+                            <animate attributeName="baseFrequency" values="0.012 0.018;0.018 0.014;0.012 0.018" dur="4.5s" repeatCount="indefinite" />
+                        </feTurbulence>
+                        <feDisplacementMap in="SourceGraphic" in2="noise" scale="135" xChannelSelector="R" yChannelSelector="G" />
+                    </filter>
+                </defs>
+            </svg>
+            <div class="dec-oniric-tendrils-stage">
+                <div class="dec-oniric-mist-rim"></div>
+                <div class="dec-oniric-shadow-wave dec-wave-outer"></div>
+                <div class="dec-oniric-shadow-wave dec-wave-inner"></div>
+                <div class="dec-oniric-corners"></div>
+            </div>
+            <div class="dec-oniric-blackout"></div>
+        `;
+        document.body.appendChild(oniricEl);
+        void oniricEl.offsetWidth;
+        oniricEl.classList.add("is-creeping-in");
+
+        await sleep(Math.max(200, coverMs - 200));
+        oniricEl.classList.add("is-full-black");
+        await sleep(250);
+        return;
+    }
+
     const overlay = ensureFadeOverlay();
     setFadeOverlayDuration(durationMs);
     void overlay.offsetWidth;
@@ -89,11 +135,21 @@ async function fadeInBlack(durationMs) {
 }
 
 async function fadeOutBlack(durationMs) {
+    const oniricEl = document.getElementById("dec-oniric-overlay");
+    if (oniricEl) {
+        const fadeMs = Math.max(400, durationMs);
+        oniricEl.style.setProperty("--dec-oniric-fade-ms", `${fadeMs}ms`);
+        void oniricEl.offsetWidth;
+        oniricEl.classList.add("is-fading-out");
+        await sleep(fadeMs);
+        oniricEl.remove();
+    }
+
     const overlay = ensureFadeOverlay();
     setFadeOverlayDuration(durationMs);
     void overlay.offsetWidth;
     overlay.classList.remove("dec-fade-visible");
-    if (durationMs > 0) {
+    if (durationMs > 0 && !oniricEl) {
         await sleep(durationMs);
     }
 }
@@ -290,6 +346,7 @@ async function applyLocalCinematicMode(payload) {
         sceneId,
         fitMode = getDefaultFitMode(),
         fadeMs = getFadeMs(),
+        transitionStyle = getDefaultTransitionStyle(),
         action = "enter"
     } = payload || {};
 
@@ -305,10 +362,13 @@ async function applyLocalCinematicMode(payload) {
         runtimeState.isTransitioning = true;
 
         try {
-            const entryFadeMs = Math.max(150, Math.round(fadeMs * 0.45));
+            const isOniric = transitionStyle === "oniric";
+            const entryFadeMs = isOniric
+                ? Math.max(1800, Number(fadeMs) || 2200)
+                : Math.max(150, Math.round(fadeMs * 0.45));
             const revealFadeMs = Math.max(200, Number(fadeMs));
 
-            await fadeInBlack(entryFadeMs);
+            await fadeInBlack(entryFadeMs, transitionStyle);
 
             runtimeState.isCinematic = true;
             runtimeState.sceneId = sceneId || canvas?.scene?.id || null;
@@ -319,7 +379,7 @@ async function applyLocalCinematicMode(payload) {
             collapseGMSidebarSafely();
 
             await waitForSceneCanvasReady(runtimeState.sceneId);
-            await sleep(80);
+            await sleep(isOniric ? 350 : 80);
 
             await fitSceneToViewport(fitMode, false);
 
@@ -405,12 +465,14 @@ export async function activateSceneInCinematicMode(sceneOrId = null, options = {
 
     const fitMode = options.fitMode || getDefaultFitMode();
     const fadeMs = typeof options.fadeMs === "number" ? options.fadeMs : getFadeMs();
+    const transitionStyle = options.transitionStyle || getDefaultTransitionStyle();
 
     const payload = {
         active: true,
         sceneId: scene.id,
         fitMode,
         fadeMs,
+        transitionStyle,
         action: "enter",
         timestamp: Date.now()
     };
@@ -425,7 +487,12 @@ export async function activateSceneInCinematicMode(sceneOrId = null, options = {
         await game.settings.set(MODULE_ID, "cinematicState", payload);
     } catch (e) {}
 
+    // Si es transición onírica, esperamos a que las sombras cubran la pantalla antes de activar la nueva escena
     const transitionPromise = applyLocalCinematicMode(payload);
+
+    if (transitionStyle === "oniric") {
+        await sleep(Math.max(1400, Math.round(fadeMs * 0.75)));
+    }
 
     if (!scene.active) {
         await scene.activate();
@@ -611,6 +678,15 @@ function buildSceneContextMenuItems() {
             }
         },
         {
+            name: "Pantalla Completa (Transición Onírica)",
+            icon: '<i class="fa-solid fa-cloud-moon" style="color:#c084fc;"></i>',
+            condition: () => Boolean(game.user?.isGM),
+            callback: (li) => {
+                const sceneId = resolveSceneIdFromElement(li);
+                if (sceneId) activateSceneInCinematicMode(sceneId, { fitMode: getDefaultFitMode(), transitionStyle: "oniric" });
+            }
+        },
+        {
             name: "Pantalla Completa (Modo Completo)",
             icon: '<i class="fa-solid fa-compress" style="color:#38bdf8;"></i>',
             condition: () => Boolean(game.user?.isGM),
@@ -686,6 +762,10 @@ function injectCinematicOptionsIntoOpenContextMenu(sceneId) {
             createCtxItem(
                 `<i class="fa-solid fa-expand fa-fw" style="color:#f3d292;"></i> <span>Activar en Pantalla Completa</span>`,
                 () => activateSceneInCinematicMode(sceneId, { fitMode: getDefaultFitMode() })
+            ),
+            createCtxItem(
+                `<i class="fa-solid fa-cloud-moon fa-fw" style="color:#c084fc;"></i> <span>Pantalla Completa (Transición Onírica)</span>`,
+                () => activateSceneInCinematicMode(sceneId, { fitMode: getDefaultFitMode(), transitionStyle: "oniric" })
             ),
             createCtxItem(
                 `<i class="fa-solid fa-compress fa-fw" style="color:#38bdf8;"></i> <span>Pantalla Completa (Completo)</span>`,
@@ -848,6 +928,19 @@ Hooks.once("init", () => {
             cover: "Rellenar (Ocupar todo el monitor sin bordes)"
         },
         default: "contain"
+    });
+
+    game.settings.register(MODULE_ID, "defaultTransitionStyle", {
+        name: "Estilo de Transición por defecto",
+        hint: "Elige si al entrar en Pantalla Completa se usa un fundido a negro clásico o las sombras negras con bruma morada/azulada del Mundo Onírico.",
+        scope: "world",
+        config: true,
+        type: String,
+        choices: {
+            fade: "Fundido a negro clásico (Fade)",
+            oniric: "Transición Onírica (Sombras negras y bruma del Dorso)"
+        },
+        default: "fade"
     });
 
     game.settings.register(MODULE_ID, "cinematicState", {
