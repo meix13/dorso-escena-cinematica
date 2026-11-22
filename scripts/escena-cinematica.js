@@ -3,16 +3,17 @@
  *
  * Características:
  * 1. Permite activar cualquier escena en "Modo Pantalla Completa" con un fundido a negro (fade) configurable.
- * 2. Oculta toda la interfaz de Foundry para los jugadores y ajusta automáticamente la escala de la escena
- *    a la resolución del monitor de cada jugador en dos modos configurables:
+ * 2. Oculta toda la interfaz de Foundry (incluyendo las cámaras WebRTC / A/V Dock sin cortar la voz) para los
+ *    jugadores y ajusta automáticamente la escala de la escena a la resolución del monitor de cada jugador en
+ *    dos modos configurables:
  *    - "contain" (Completo): muestra el 100% de la escena sin recortar nada.
  *    - "cover"   (Rellenar): llena el 100% de la ventana del navegador sin bandas.
  * 3. Interacción narrativa: bloquea el arrastre/movimiento libre y la selección de tokens, permitiendo
  *    únicamente hacer zoom con la rueda del ratón (con encuadre inteligente dentro de los límites de la escena
  *    y retorno automático al centro al alejar el zoom).
- * 4. Vista del GM: previsualiza la pantalla completa igual que los jugadores, pliega automáticamente la barra
- *    lateral derecha (dejándola disponible por si necesita abrir chat, audio o diario) y muestra una barra
- *    flotante superior para alternar entre "Completo"/"Rellenar" o "Volver a Modo Normal".
+ * 4. Vista del GM: previsualiza la pantalla completa igual que los jugadores (también sin cámaras), pliega
+ *    automáticamente la barra lateral derecha (dejándola disponible por si necesita abrir chat, audio o diario)
+ *    y muestra una barra flotante superior para alternar entre "Completo"/"Rellenar" o "Volver a Modo Normal".
  */
 
 const MODULE_ID = "dorso-escena-cinematica";
@@ -80,7 +81,6 @@ function sleep(ms) {
 async function fadeInBlack(durationMs) {
     const overlay = ensureFadeOverlay();
     setFadeOverlayDuration(durationMs);
-    // Forzar reflow para que la transición se aplique siempre
     void overlay.offsetWidth;
     overlay.classList.add("dec-fade-visible");
     if (durationMs > 0) {
@@ -136,10 +136,6 @@ function computeOptimalScale(bounds, fitMode = "contain") {
     return Math.max(0.05, Math.min(10, rawScale));
 }
 
-/**
- * Desbloquea temporalmente el límite mínimo de zoom de Foundry si la escena es muy grande
- * y requiere un scale menor al minZoom por defecto para caber entera en el monitor.
- */
 function ensureCanvasScaleLimits(targetScale) {
     if (!canvas?.stage) return;
     try {
@@ -200,7 +196,7 @@ function renderGMFloatingHud() {
     const hud = document.createElement("div");
     hud.id = "dec-gm-hud";
     hud.innerHTML = `
-        <span class="dec-hud-badge" title="Los jugadores están viendo esta escena en Modo Pantalla Completa sin interfaz">
+        <span class="dec-hud-badge" title="Los jugadores están viendo esta escena en Modo Pantalla Completa sin interfaz ni cámaras">
             <i class="fa-solid fa-circle"></i>
             <span>Pantalla Completa</span>
         </span>
@@ -277,9 +273,6 @@ function collapseGMSidebarSafely() {
     } catch (e) {}
 }
 
-/**
- * Espera hasta que el canvas esté listo y en la escena solicitada.
- */
 async function waitForSceneCanvasReady(targetSceneId, timeoutMs = 12000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -300,7 +293,6 @@ async function applyLocalCinematicMode(payload) {
         action = "enter"
     } = payload || {};
 
-    // Si es solo un cambio rápido de ajuste (Completo <-> Rellenar) o Recentrar sin recargar escena
     if (active && runtimeState.isCinematic && (action === "updateFit" || action === "recenter")) {
         runtimeState.fitMode = fitMode;
         await fitSceneToViewport(fitMode, true);
@@ -313,7 +305,6 @@ async function applyLocalCinematicMode(payload) {
         runtimeState.isTransitioning = true;
 
         try {
-            // 1. Fundido a negro inicial para cubrir la transición de interfaz y carga de escena
             const entryFadeMs = Math.max(150, Math.round(fadeMs * 0.45));
             const revealFadeMs = Math.max(200, Number(fadeMs));
 
@@ -323,24 +314,18 @@ async function applyLocalCinematicMode(payload) {
             runtimeState.sceneId = sceneId || canvas?.scene?.id || null;
             runtimeState.fitMode = fitMode;
 
-            // 2. Ocultar UI de Foundry y plegar barra derecha del GM
+            // Ocultar UI y cámaras de Foundry y plegar barra derecha del GM
             applyBodyCinematicClasses(true);
             collapseGMSidebarSafely();
 
-            // 3. Si el GM activó una escena diferente que aún se está cargando, esperar a que el canvas esté listo
             await waitForSceneCanvasReady(runtimeState.sceneId);
-
-            // Pequeña pausa de estabilización de layout tras ocultar la UI
             await sleep(80);
 
-            // 4. Ajustar el tamaño de la escena al monitor del jugador
             await fitSceneToViewport(fitMode, false);
 
-            // 5. Mostrar HUD flotante para el GM y actualizar botones del directorio
             renderGMFloatingHud();
             refreshDirectoryButtonsState();
 
-            // 6. Fundido de aparición (fade-out del negro) con la duración configurada (ej. 2 segundos)
             await fadeOutBlack(revealFadeMs);
         } finally {
             runtimeState.isTransitioning = false;
@@ -389,17 +374,14 @@ async function updateGlobalCinematicState(newState) {
 
     runtimeState.lastTimestamp = payload.timestamp;
 
-    // Emitir por socket para respuesta instantánea en todos los clientes
     try {
         game.socket?.emit(SOCKET_NAME, payload);
     } catch (e) {}
 
-    // Guardar en world setting para persistencia (si un jugador refresca con F5)
     try {
         await game.settings.set(MODULE_ID, "cinematicState", payload);
     } catch (e) {}
 
-    // Aplicar localmente en el cliente del GM
     await applyLocalCinematicMode(payload);
 }
 
@@ -424,7 +406,6 @@ export async function activateSceneInCinematicMode(sceneOrId = null, options = {
     const fitMode = options.fitMode || getDefaultFitMode();
     const fadeMs = typeof options.fadeMs === "number" ? options.fadeMs : getFadeMs();
 
-    // 1. Enviar orden de entrada en modo pantalla completa (inicia el fade a negro inmediatamente en todos los clientes)
     const payload = {
         active: true,
         sceneId: scene.id,
@@ -444,10 +425,8 @@ export async function activateSceneInCinematicMode(sceneOrId = null, options = {
         await game.settings.set(MODULE_ID, "cinematicState", payload);
     } catch (e) {}
 
-    // Iniciar transición local en el GM en paralelo con la activación de la escena
     const transitionPromise = applyLocalCinematicMode(payload);
 
-    // 2. Si la escena aún no es la escena activa del mundo, activarla en Foundry
     if (!scene.active) {
         await scene.activate();
     } else if (canvas?.scene?.id !== scene.id) {
@@ -493,15 +472,11 @@ function handleIncomingCinematicPayload(payload) {
    ========================================================================== */
 
 function setupNarrativeZoomAndInteractionLocks() {
-    // 1. Interceptar la rueda del ratón sobre el lienzo (#board) en modo Pantalla Completa:
-    //    Permite hacer zoom suave hacia el cursor sin salirse de los bordes de la escena,
-    //    y al alejar el zoom de vuelta a la escala base re-centra la escena automáticamente.
     window.addEventListener("wheel", (ev) => {
         if (!runtimeState.isCinematic || !canvas?.ready) return;
 
         const target = ev.target;
         if (!(target instanceof HTMLElement)) return;
-        // Si el GM está haciendo scroll dentro de la barra lateral derecha (#sidebar), permitir scroll normal
         if (target.closest("#ui-right, #sidebar, .app, .application, #dec-gm-hud")) return;
         if (target.id !== "board" && !target.closest("#board")) return;
 
@@ -518,7 +493,6 @@ function setupNarrativeZoomAndInteractionLocks() {
         const zoomFactor = ev.deltaY < 0 ? 1.12 : (1 / 1.12);
         const nextScale = Math.max(minScale, Math.min(maxScale, currentScale * zoomFactor));
 
-        // Si volvemos a la escala base (o muy cerca), centrar exactamente la escena en el monitor
         if (nextScale <= minScale * 1.02) {
             canvas.pan({
                 x: bounds.centerX,
@@ -528,7 +502,6 @@ function setupNarrativeZoomAndInteractionLocks() {
             return;
         }
 
-        // Calcular punto del mundo bajo el cursor para hacer zoom hacia donde apunta el jugador
         const rect = target.getBoundingClientRect();
         const screenX = ev.clientX - rect.left;
         const screenY = ev.clientY - rect.top;
@@ -542,19 +515,16 @@ function setupNarrativeZoomAndInteractionLocks() {
         let nextCenterY = currentCenterY;
 
         if (ev.deltaY < 0) {
-            // Al acercar (zoom in), desplazar suavemente el pivote hacia el cursor
             const worldMouseX = currentCenterX + ((screenX - viewCenterX) / currentScale);
             const worldMouseY = currentCenterY + ((screenY - viewCenterY) / currentScale);
             nextCenterX = worldMouseX - ((screenX - viewCenterX) / nextScale);
             nextCenterY = worldMouseY - ((screenY - viewCenterY) / nextScale);
         } else {
-            // Al alejar (zoom out), interpolar suavemente de vuelta hacia el centro de la escena
             const ratio = (nextScale - minScale) / Math.max(0.0001, currentScale - minScale);
             nextCenterX = bounds.centerX + (currentCenterX - bounds.centerX) * ratio;
             nextCenterY = bounds.centerY + (currentCenterY - bounds.centerY) * ratio;
         }
 
-        // Limitar el centro para que nunca se salga de los bordes de la ilustración
         const halfVisibleW = (rect.width / nextScale) / 2;
         const halfVisibleH = (rect.height / nextScale) / 2;
 
@@ -573,8 +543,6 @@ function setupNarrativeZoomAndInteractionLocks() {
         });
     }, { capture: true, passive: false });
 
-    // 2. Bloquear interacción de clic/arrastre en el tablero (#board) mientras está en Modo Pantalla Completa
-    //    para que los jugadores no puedan mover tokens, hacer ping ni arrastrar el lienzo fuera de sitio.
     const blockBoardMouseInteraction = (ev) => {
         if (!runtimeState.isCinematic) return;
         const target = ev.target;
@@ -596,7 +564,6 @@ function setupNarrativeZoomAndInteractionLocks() {
         }
     }, { capture: true });
 
-    // 3. Reajustar automáticamente si el jugador cambia el tamaño de su navegador o pulsa F11
     let resizeTimeout = null;
     window.addEventListener("resize", () => {
         if (!runtimeState.isCinematic) return;
@@ -608,14 +575,28 @@ function setupNarrativeZoomAndInteractionLocks() {
 }
 
 /* ==========================================================================
-   7. INTEGRACIÓN EN MENÚS CONTEXTUALES Y DIRECTORIO DE ESCENAS (FOUNDRY V14)
+   7. INTEGRACIÓN CON MENÚ CONTEXTUAL (CLIC DERECHO) Y DIRECTORIO EN FOUNDRY V14
    ========================================================================== */
 
+/**
+ * Extrae el ID de una escena a partir de cualquier elemento del DOM (barra superior #navigation / #scene-navigation
+ * o panel lateral #scenes en Foundry v12, v13 y v14 ApplicationV2).
+ */
 function resolveSceneIdFromElement(target) {
     const el = target instanceof HTMLElement ? target : target?.[0];
     if (!el) return null;
-    const item = el.closest("[data-scene-id], [data-document-id], [data-entry-id]") || el;
-    return item?.dataset?.sceneId || item?.dataset?.documentId || item?.dataset?.entryId || null;
+
+    const item = el.closest("[data-scene-id], [data-document-id], [data-entry-id]");
+    if (!item) return null;
+
+    const candidateId = item.dataset.sceneId || item.dataset.documentId || item.dataset.entryId;
+    if (!candidateId) return null;
+
+    // Verificar que realmente corresponde a una escena existente en game.scenes
+    if (game.scenes?.has?.(candidateId) || game.scenes?.get?.(candidateId)) {
+        return candidateId;
+    }
+    return null;
 }
 
 function buildSceneContextMenuItems() {
@@ -663,7 +644,6 @@ function injectSceneContextOptions(appOrHtml, menuItems) {
     if (menuItems.some(i => i.name?.includes("Pantalla Completa"))) return;
 
     const customItems = buildSceneContextMenuItems();
-    // Insertar justo después de "Activate" / "Activar" si existe, o al principio
     const activateIdx = menuItems.findIndex(i =>
         i.name?.includes("Activate") || i.name?.includes("Activar") || i.name?.includes("SCENE.Activate")
     );
@@ -675,14 +655,114 @@ function injectSceneContextOptions(appOrHtml, menuItems) {
 }
 
 /**
- * Inyecta botones rápidos de "Activar en Pantalla Completa" en cada escena del directorio de escenas
- * y asegura que el menú contextual (clic derecho) en Foundry v14 incluya las opciones.
+ * Inyecta en cualquier menú contextual de Foundry (tanto <ol class="context-items"> en v12
+ * como <menu class="context-items"> en v13/v14 ApplicationV2) las opciones de Pantalla Completa.
  */
-function enhanceSceneDirectoryDOM(rootElement) {
+function injectCinematicOptionsIntoOpenContextMenu(sceneId) {
+    if (!game.user?.isGM || !sceneId) return;
+
+    const ctxLists = document.querySelectorAll(
+        "#context-menu .context-items, .context-menu .context-items, #context-menu menu, #context-menu ol"
+    );
+
+    ctxLists.forEach(ctxMenu => {
+        if (ctxMenu.querySelector(".dec-injected-ctx")) return;
+        if (ctxMenu.textContent?.includes("Pantalla Completa")) return;
+
+        const createCtxItem = (html, onClick) => {
+            const li = document.createElement("li");
+            li.className = "context-item dec-injected-ctx";
+            li.innerHTML = html;
+            li.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                document.querySelectorAll("#context-menu, .context-menu").forEach(m => m.remove());
+                onClick();
+            });
+            return li;
+        };
+
+        const itemsToInsert = [
+            createCtxItem(
+                `<i class="fa-solid fa-expand fa-fw" style="color:#f3d292;"></i> <span>Activar en Pantalla Completa</span>`,
+                () => activateSceneInCinematicMode(sceneId, { fitMode: getDefaultFitMode() })
+            ),
+            createCtxItem(
+                `<i class="fa-solid fa-compress fa-fw" style="color:#38bdf8;"></i> <span>Pantalla Completa (Completo)</span>`,
+                () => activateSceneInCinematicMode(sceneId, { fitMode: "contain" })
+            ),
+            createCtxItem(
+                `<i class="fa-solid fa-up-right-and-down-left-from-center fa-fw" style="color:#a855f7;"></i> <span>Pantalla Completa (Rellenar)</span>`,
+                () => activateSceneInCinematicMode(sceneId, { fitMode: "cover" })
+            )
+        ];
+
+        if (runtimeState.isCinematic) {
+            itemsToInsert.push(
+                createCtxItem(
+                    `<i class="fa-solid fa-right-from-bracket fa-fw" style="color:#f87171;"></i> <span>Volver a Modo Normal</span>`,
+                    () => deactivateCinematicMode()
+                )
+            );
+        }
+
+        // Buscar el item "Activar" / "Activate" para colocar nuestras opciones justo debajo
+        const children = Array.from(ctxMenu.children);
+        const activateLi = children.find(li => {
+            const txt = (li.textContent || "").toLowerCase();
+            return txt.includes("activar") || txt.includes("activate");
+        });
+
+        if (activateLi && activateLi.nextSibling) {
+            const refNode = activateLi.nextSibling;
+            itemsToInsert.forEach(item => ctxMenu.insertBefore(item, refNode));
+        } else if (activateLi) {
+            itemsToInsert.forEach(item => ctxMenu.appendChild(item));
+        } else {
+            itemsToInsert.reverse().forEach(item => ctxMenu.prepend(item));
+        }
+    });
+}
+
+/**
+ * Listener global delegado para clic derecho (contextmenu) en toda la interfaz de Foundry v14:
+ * Funciona tanto en la barra de navegación superior (#navigation / #scene-navigation) como en el
+ * Directorio de Escenas de la barra derecha (#scenes), sin importar cómo o cuándo se hayan renderizado.
+ */
+function setupGlobalSceneContextMenuInterceptor() {
+    document.addEventListener("contextmenu", (ev) => {
+        if (!game.user?.isGM) return;
+        const target = ev.target;
+        if (!(target instanceof HTMLElement)) return;
+
+        // Comprobar si el clic derecho ha ocurrido sobre una escena (en Navegación o en Directorio de Escenas)
+        const inSceneArea = target.closest(
+            "#scenes, .scenes-sidebar, [data-tab='scenes'], #navigation, #scene-navigation"
+        );
+        if (!inSceneArea) return;
+
+        const sceneId = resolveSceneIdFromElement(target);
+        if (!sceneId) return;
+
+        // Inyectar las opciones en cuanto Foundry v14 inserte el #context-menu en el DOM
+        [10, 35, 80, 160].forEach(delay => {
+            setTimeout(() => injectCinematicOptionsIntoOpenContextMenu(sceneId), delay);
+        });
+    }, true);
+}
+
+/**
+ * Añade el botón rápido <kbd>⛶</kbd> a cada escena del Directorio de Escenas (#scenes).
+ */
+function enhanceSceneDirectoryDOM(rootElement = document) {
     if (!game.user?.isGM || !rootElement) return;
 
-    const items = rootElement.querySelectorAll(
-        ".directory-item.document, .directory-item.scene, li[data-document-id], li[data-entry-id], li[data-scene-id]"
+    const scenesContainer = rootElement.id === "scenes"
+        ? rootElement
+        : (rootElement.querySelector?.("#scenes") || rootElement);
+
+    const items = scenesContainer.querySelectorAll(
+        ".directory-item.document, .directory-item.scene, .directory-item[data-entry-id], li[data-document-id], li[data-entry-id]"
     );
 
     items.forEach(el => {
@@ -690,8 +770,7 @@ function enhanceSceneDirectoryDOM(rootElement) {
         const sceneId = resolveSceneIdFromElement(el);
         if (!sceneId) return;
 
-        // 1. Botón de activación rápida en Pantalla Completa en la lista del Directorio de Escenas
-        if (el.closest("#scenes") && !el.querySelector(".dec-scene-dir-btn")) {
+        if (!el.querySelector(".dec-scene-dir-btn")) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "dec-scene-dir-btn";
@@ -715,54 +794,6 @@ function enhanceSceneDirectoryDOM(rootElement) {
             });
 
             el.appendChild(btn);
-        }
-
-        // 2. Fallback de inyección en menú contextual DOM para Foundry v14 ApplicationV2
-        if (!el.dataset.decCtxBound) {
-            el.dataset.decCtxBound = "true";
-            el.addEventListener("contextmenu", () => {
-                const injectIntoDOMContextMenu = () => {
-                    const ctxMenu = document.querySelector("#context-menu ol.context-items, .context-menu ol.context-items");
-                    if (!ctxMenu || ctxMenu.querySelector(".dec-injected-ctx")) return;
-                    if (ctxMenu.textContent?.includes("Pantalla Completa")) return;
-
-                    const createCtxItem = (html, onClick) => {
-                        const li = document.createElement("li");
-                        li.className = "context-item dec-injected-ctx";
-                        li.innerHTML = html;
-                        li.addEventListener("click", (e) => {
-                            e.stopPropagation();
-                            document.querySelector("#context-menu, .context-menu")?.remove();
-                            onClick();
-                        });
-                        return li;
-                    };
-
-                    const liFullContain = createCtxItem(
-                        `<i class="fa-solid fa-compress fa-fw" style="color:#38bdf8;"></i> Pantalla Completa (Completo)`,
-                        () => activateSceneInCinematicMode(sceneId, { fitMode: "contain" })
-                    );
-
-                    const liFullCover = createCtxItem(
-                        `<i class="fa-solid fa-up-right-and-down-left-from-center fa-fw" style="color:#a855f7;"></i> Pantalla Completa (Rellenar)`,
-                        () => activateSceneInCinematicMode(sceneId, { fitMode: "cover" })
-                    );
-
-                    ctxMenu.prepend(liFullCover);
-                    ctxMenu.prepend(liFullContain);
-
-                    if (runtimeState.isCinematic) {
-                        const liExit = createCtxItem(
-                            `<i class="fa-solid fa-right-from-bracket fa-fw" style="color:#f87171;"></i> Volver a Modo Normal`,
-                            () => deactivateCinematicMode()
-                        );
-                        ctxMenu.prepend(liExit);
-                    }
-                };
-
-                setTimeout(injectIntoDOMContextMenu, 25);
-                setTimeout(injectIntoDOMContextMenu, 95);
-            });
         }
     });
 }
@@ -792,7 +823,6 @@ window.DorsoEscenaCinematica = {
 Hooks.once("init", () => {
     console.log(`${MODULE_ID} | Inicializando módulo Escena Cinemática a Pantalla Completa...`);
 
-    // 1. Duración del Fade en segundos (configurable por el GM)
     game.settings.register(MODULE_ID, "fadeDuration", {
         name: "Duración del Fundido (Fade) en segundos",
         hint: "Tiempo en segundos que tarda el fundido a negro al entrar en Modo Pantalla Completa (por ejemplo: 2 segundos).",
@@ -807,7 +837,6 @@ Hooks.once("init", () => {
         default: 2.0
     });
 
-    // 2. Modo de ajuste por defecto ("Completo" vs "Rellenar")
     game.settings.register(MODULE_ID, "defaultFitMode", {
         name: "Modo de Ajuste de Pantalla por defecto",
         hint: "Elige cómo se adapta la escena al monitor de cada jugador: 'Completo' muestra toda la ilustración sin recortar nada; 'Rellenar' ocupa todo el monitor sin bandas.",
@@ -821,7 +850,6 @@ Hooks.once("init", () => {
         default: "contain"
     });
 
-    // 3. Estado interno sincronizado del modo pantalla completa (a prueba de F5)
     game.settings.register(MODULE_ID, "cinematicState", {
         name: "Estado activo de Escena Cinemática",
         scope: "world",
@@ -840,11 +868,13 @@ Hooks.once("init", () => {
     });
 
     setupNarrativeZoomAndInteractionLocks();
+    setupGlobalSceneContextMenuInterceptor();
 });
 
 // Hooks de menú contextual para SceneDirectory y SceneNavigation (compatibilidad v12, v13 y v14)
 Hooks.on("getSceneDirectoryEntryContext", injectSceneContextOptions);
 Hooks.on("getSceneEntryContextOptions", injectSceneContextOptions);
+Hooks.on("getSceneContextOptions", injectSceneContextOptions);
 Hooks.on("getSceneNavigationContext", injectSceneContextOptions);
 Hooks.on("getSceneNavigationContextOptions", injectSceneContextOptions);
 
@@ -874,34 +904,24 @@ Hooks.on("getSceneControlButtons", (controls) => {
     }
 });
 
-// Inyectar botones rápidos en el Directorio de Escenas y barra de navegación
+// Inyectar botones rápidos en el Directorio de Escenas
 Hooks.on("renderSceneDirectory", (app, html) => {
     const root = html instanceof HTMLElement ? html : html?.[0];
     if (root) enhanceSceneDirectoryDOM(root);
 });
 
-Hooks.on("renderSceneNavigation", (app, html) => {
-    const root = html instanceof HTMLElement ? html : html?.[0];
-    if (root) enhanceSceneDirectoryDOM(root);
-});
-
-// Cuando cambia el canvas de escena:
-// - Si la nueva escena coincide con la escena cinemática activa, re-encuadrar automáticamente.
-// - Si el GM activó otra escena distinta de forma normal, salir automáticamente del modo pantalla completa.
 Hooks.on("canvasReady", async (currentCanvas) => {
     const savedState = getCinematicStateSetting();
     if (!savedState?.active) return;
 
     const currentSceneId = currentCanvas?.scene?.id;
     if (savedState.sceneId && currentSceneId && savedState.sceneId !== currentSceneId) {
-        // Si el GM activó otra escena por la vía normal, salimos del modo pantalla completa
         if (game.user?.isGM && currentCanvas.scene?.active && !runtimeState.isTransitioning) {
             await deactivateCinematicMode({ fadeMs: 600 });
         }
         return;
     }
 
-    // Re-encuadrar la escena al monitor del usuario
     if (runtimeState.isCinematic) {
         await fitSceneToViewport(runtimeState.fitMode, false);
         renderGMFloatingHud();
@@ -910,6 +930,7 @@ Hooks.on("canvasReady", async (currentCanvas) => {
 
 Hooks.once("ready", async () => {
     ensureFadeOverlay();
+    enhanceSceneDirectoryDOM(document);
 
     if (game.socket) {
         game.socket.on(SOCKET_NAME, (payload) => {
@@ -917,7 +938,6 @@ Hooks.once("ready", async () => {
         });
     }
 
-    // Si la partida ya tenía una escena en modo Pantalla Completa al conectar o refrescar con F5, restaurarla
     const savedState = getCinematicStateSetting();
     if (savedState?.active && (!savedState.sceneId || savedState.sceneId === canvas?.scene?.id)) {
         await applyLocalCinematicMode({

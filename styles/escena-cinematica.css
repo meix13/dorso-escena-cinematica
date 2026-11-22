@@ -31,18 +31,40 @@
 }
 
 /* --------------------------------------------------------------------------
-   2. OCULTACIÓN DE INTERFAZ EN MODO PANTALLA COMPLETA
+   2. OCULTACIÓN DE INTERFAZ Y CÁMARAS EN MODO PANTALLA COMPLETA
    -------------------------------------------------------------------------- */
+
+/* Ocultar completamente las cámaras WebRTC / A/V Dock (sin cortar el audio de voz) */
+body.dec-cinematic-active #camera-views,
+body.dec-cinematic-active .camera-views,
+body.dec-cinematic-active #webrtc,
+body.dec-cinematic-active .webrtc-container,
+body.dec-cinematic-active #av-dock,
+body.dec-cinematic-active [data-application-part="cameras"] {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    max-height: 0 !important;
+    max-width: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    transition: opacity 0.35s ease, visibility 0.35s ease;
+}
 
 /* Elementos frontales ocultos tanto para Jugadores como para GM (previsualización) */
 body.dec-cinematic-active #ui-left,
 body.dec-cinematic-active #ui-top,
 body.dec-cinematic-active #ui-bottom,
 body.dec-cinematic-active #controls,
+body.dec-cinematic-active #scene-controls,
 body.dec-cinematic-active #navigation,
+body.dec-cinematic-active #scene-navigation,
 body.dec-cinematic-active #logo,
 body.dec-cinematic-active #players,
 body.dec-cinematic-active #hotbar,
+body.dec-cinematic-active #action-bar,
 body.dec-cinematic-active #fps,
 body.dec-cinematic-active #pause {
     opacity: 0 !important;
@@ -54,7 +76,8 @@ body.dec-cinematic-active #pause {
 /* Para JUGADORES: también se oculta por completo la barra lateral derecha (#ui-right / #sidebar) */
 body.dec-cinematic-active.dec-is-player #ui-right,
 body.dec-cinematic-active.dec-is-player #sidebar,
-body.dec-cinematic-active.dec-is-player .app.sidebar-popout {
+body.dec-cinematic-active.dec-is-player .app.sidebar-popout,
+body.dec-cinematic-active.dec-is-player .application.sidebar-popout {
     opacity: 0 !important;
     pointer-events: none !important;
     visibility: hidden !important;
@@ -67,9 +90,9 @@ body.dec-cinematic-active.dec-is-gm #sidebar {
     z-index: 99980;
 }
 
-/* En modo pantalla completa, desactivar cursores de selección de tokens para jugadores */
+/* En modo pantalla completa, cursor limpio sobre el tablero */
 body.dec-cinematic-active.dec-is-player #board {
-    cursor: grab !important;
+    cursor: default !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -180,7 +203,8 @@ body.dec-cinematic-active.dec-is-player #board {
     flex: 0 0 26px;
     width: 26px;
     height: 26px;
-    margin-right: 4px;
+    margin-right: 6px;
+    margin-left: 4px;
     padding: 0;
     border-radius: 5px;
     border: 1px solid rgba(201, 166, 107, 0.45);
@@ -190,9 +214,10 @@ body.dec-cinematic-active.dec-is-player #board {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    opacity: 0.78;
+    opacity: 0.85;
     transition: all 0.18s ease;
     font-size: 12px;
+    align-self: center;
 }
 
 .dec-scene-dir-btn:hover {
