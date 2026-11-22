@@ -1,0 +1,26 @@
+{
+  "id": "dorso-escena-cinematica",
+  "title": "Escena Cinemática a Pantalla Completa (Dorso Oscuro)",
+  "description": "Módulo para Foundry VTT v14 pensado para escenas narrativas. Permite activar cualquier escena en 'Modo Pantalla Completa' con un fundido (fade) configurable, ocultando la interfaz de los jugadores, ajustando automáticamente el tamaño de la escena al monitor de cada jugador ('Completo' o 'Rellenar'), limitando la interacción únicamente al zoom, y ofreciendo al GM previsualización en vivo con la barra derecha plegada y un panel flotante para volver al Modo Normal.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "14",
+    "maximum": "14"
+  },
+  "authors": [
+    {
+      "name": "Miguel Ángel Lucas"
+    }
+  ],
+  "esmodules": [
+    "scripts/escena-cinematica.js"
+  ],
+  "styles": [
+    "styles/escena-cinematica.css"
+  ],
+  "socket": true,
+  "url": "https://github.com/meix13/dorso-escena-cinematica",
+  "manifest": "https://raw.githubusercontent.com/meix13/dorso-escena-cinematica/main/module.json",
+  "download": "https://github.com/meix13/dorso-escena-cinematica/archive/refs/heads/main.zip"
+}

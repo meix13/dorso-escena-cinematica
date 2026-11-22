@@ -1,0 +1,211 @@
+/* ==========================================================================
+   Dorso Oscuro — Escena Cinemática a Pantalla Completa (Foundry VTT v12-v14)
+   ========================================================================== */
+
+:root {
+    --dec-fade-ms: 2000ms;
+    --dec-gold: #c9a66b;
+    --dec-gold-light: #f3d292;
+    --dec-bg-dark: rgba(9, 13, 22, 0.88);
+    --dec-border: rgba(201, 166, 107, 0.45);
+}
+
+/* --------------------------------------------------------------------------
+   1. OVERLAY DE FUNDIDO A NEGRO (FADE CONFIGURABLE)
+   -------------------------------------------------------------------------- */
+#dec-fade-overlay {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #04060a;
+    z-index: 99990;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--dec-fade-ms) ease-in-out;
+}
+
+#dec-fade-overlay.dec-fade-visible {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* --------------------------------------------------------------------------
+   2. OCULTACIÓN DE INTERFAZ EN MODO PANTALLA COMPLETA
+   -------------------------------------------------------------------------- */
+
+/* Elementos frontales ocultos tanto para Jugadores como para GM (previsualización) */
+body.dec-cinematic-active #ui-left,
+body.dec-cinematic-active #ui-top,
+body.dec-cinematic-active #ui-bottom,
+body.dec-cinematic-active #controls,
+body.dec-cinematic-active #navigation,
+body.dec-cinematic-active #logo,
+body.dec-cinematic-active #players,
+body.dec-cinematic-active #hotbar,
+body.dec-cinematic-active #fps,
+body.dec-cinematic-active #pause {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+/* Para JUGADORES: también se oculta por completo la barra lateral derecha (#ui-right / #sidebar) */
+body.dec-cinematic-active.dec-is-player #ui-right,
+body.dec-cinematic-active.dec-is-player #sidebar,
+body.dec-cinematic-active.dec-is-player .app.sidebar-popout {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+/* Para el GM: se mantiene #ui-right / #sidebar accesible (se pliega al entrar pero puede abrirla si necesita algo) */
+body.dec-cinematic-active.dec-is-gm #ui-right,
+body.dec-cinematic-active.dec-is-gm #sidebar {
+    z-index: 99980;
+}
+
+/* En modo pantalla completa, desactivar cursores de selección de tokens para jugadores */
+body.dec-cinematic-active.dec-is-player #board {
+    cursor: grab !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. HUD FLOTANTE DEL GM EN MODO PANTALLA COMPLETA
+   -------------------------------------------------------------------------- */
+#dec-gm-hud {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 99985;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    background: var(--dec-bg-dark);
+    border: 1px solid var(--dec-border);
+    border-radius: 999px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.75), 0 0 14px rgba(201, 166, 107, 0.18);
+    backdrop-filter: blur(8px);
+    color: #e2e8f0;
+    font-family: "Signika", sans-serif;
+    font-size: 13px;
+    opacity: 0.42;
+    transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+    user-select: none;
+}
+
+#dec-gm-hud:hover {
+    opacity: 1;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.9), 0 0 18px rgba(201, 166, 107, 0.32);
+}
+
+#dec-gm-hud .dec-hud-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--dec-gold-light);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding-right: 8px;
+    border-right: 1px solid rgba(201, 166, 107, 0.3);
+    white-space: nowrap;
+}
+
+#dec-gm-hud .dec-hud-badge i {
+    color: #ef4444;
+    animation: dec-pulse 2.2s infinite ease-in-out;
+}
+
+#dec-gm-hud .dec-hud-scene-name {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #cbd5e1;
+    font-weight: 600;
+}
+
+#dec-gm-hud .dec-hud-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(201, 166, 107, 0.4);
+    background: rgba(15, 23, 42, 0.85);
+    color: #f8fafc;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    line-height: 1.3;
+    width: auto;
+    margin: 0;
+}
+
+#dec-gm-hud .dec-hud-btn:hover {
+    background: rgba(201, 166, 107, 0.22);
+    border-color: var(--dec-gold-light);
+    color: var(--dec-gold-light);
+    box-shadow: 0 0 10px rgba(201, 166, 107, 0.25);
+}
+
+#dec-gm-hud .dec-hud-btn.dec-hud-btn-exit {
+    background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+    border-color: #f87171;
+    color: #fef2f2;
+}
+
+#dec-gm-hud .dec-hud-btn.dec-hud-btn-exit:hover {
+    background: linear-gradient(135deg, #991b1b 0%, #dc2626 100%);
+    border-color: #fca5a5;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+}
+
+@keyframes dec-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.88); }
+}
+
+/* --------------------------------------------------------------------------
+   4. BOTÓN RÁPIDO EN EL DIRECTORIO DE ESCENAS (PARA EL GM)
+   -------------------------------------------------------------------------- */
+.dec-scene-dir-btn {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 26px;
+    margin-right: 4px;
+    padding: 0;
+    border-radius: 5px;
+    border: 1px solid rgba(201, 166, 107, 0.45);
+    background: rgba(9, 13, 22, 0.78);
+    color: var(--dec-gold-light);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.78;
+    transition: all 0.18s ease;
+    font-size: 12px;
+}
+
+.dec-scene-dir-btn:hover {
+    opacity: 1;
+    background: rgba(201, 166, 107, 0.25);
+    border-color: var(--dec-gold-light);
+    color: #ffffff;
+    box-shadow: 0 0 8px rgba(201, 166, 107, 0.4);
+}
+
+.dec-scene-dir-btn.dec-active-scene-cinematic {
+    background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+    border-color: #fca5a5;
+    color: #ffffff;
+    opacity: 1;
+}
